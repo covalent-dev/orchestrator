@@ -9,6 +9,7 @@ let pollTimer = null;
 const state = {
   sessions: [],
   selectedId: null,
+  selectedTaskId: null,
   statusServerOk: false,
   currentTab: "sessions",
   queue: [],
@@ -80,6 +81,18 @@ const els = {
     "in-progress": document.getElementById("col-in-progress"),
     blocked: document.getElementById("col-blocked"),
     completed: document.getElementById("col-completed"),
+  },
+  // Queue detail panel elements
+  queueDetail: {
+    title: document.getElementById("queue-detail-title"),
+    meta: document.getElementById("queue-detail-meta"),
+    empty: document.getElementById("queue-detail-empty"),
+    view: document.getElementById("queue-detail-view"),
+    tags: document.getElementById("queue-detail-tags"),
+    content: document.getElementById("queue-detail-content"),
+    btnLaunch: document.getElementById("btn-queue-launch"),
+    btnBlock: document.getElementById("btn-queue-block"),
+    btnOutput: document.getElementById("btn-queue-output"),
   },
   // Modal elements
   modal: document.getElementById("modal-new-task"),
@@ -199,7 +212,31 @@ function setupEventListeners() {
       const taskId = actionEl.dataset.task;
       if (!taskId) return;
       await handleQueueAction(action, taskId);
+      return;
     }
+
+    // Handle card click for detail panel
+    const card = e.target.closest(".taskCard");
+    if (card && card.dataset.taskId) {
+      await selectTask(card.dataset.taskId);
+    }
+  });
+
+  // Queue detail panel buttons
+  els.queueDetail.btnLaunch.addEventListener("click", async () => {
+    if (!state.selectedTaskId) return;
+    await launchQueueTask(state.selectedTaskId);
+  });
+
+  els.queueDetail.btnBlock.addEventListener("click", async () => {
+    if (!state.selectedTaskId) return;
+    await moveTaskToBlocked(state.selectedTaskId);
+  });
+
+  els.queueDetail.btnOutput.addEventListener("click", async () => {
+    if (!state.selectedTaskId) return;
+    // TODO: View output for in-progress tasks
+    showToast("Output view coming soon", "info");
   });
 
   // Close modal on Escape
@@ -771,6 +808,17 @@ function renderQueue() {
       els.queueCols[key].innerHTML = buckets[key].map(taskCardHtml).join("");
     }
   }
+
+  // Restore active state if a task is selected
+  if (state.selectedTaskId) {
+    const activeCard = document.querySelector(`[data-task-id="${state.selectedTaskId}"]`);
+    if (activeCard) {
+      activeCard.classList.add("active");
+    } else {
+      // Selected task no longer exists, clear selection
+      clearTaskSelection();
+    }
+  }
 }
 
 function normalizeQueueStatus(status) {
@@ -819,6 +867,91 @@ function taskCardHtml(task) {
 async function handleQueueAction(action, taskId) {
   if (action === "launch") {
     await launchQueueTask(taskId);
+  }
+}
+
+async function selectTask(taskId) {
+  state.selectedTaskId = taskId;
+
+  // Update active state on cards
+  document.querySelectorAll(".taskCard").forEach((c) => c.classList.remove("active"));
+  document.querySelector(`[data-task-id="${taskId}"]`)?.classList.add("active");
+
+  // Show loading state
+  els.queueDetail.empty.classList.add("hidden");
+  els.queueDetail.view.classList.remove("hidden");
+  els.queueDetail.content.textContent = "Loading…";
+
+  // Fetch task details
+  try {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`);
+    if (!res.ok) {
+      const data = await res.json();
+      els.queueDetail.content.textContent = data.error || "Failed to load task";
+      return;
+    }
+    const task = await res.json();
+    renderTaskDetail(task);
+  } catch (error) {
+    els.queueDetail.content.textContent = `Error: ${error.message}`;
+  }
+}
+
+function renderTaskDetail(task) {
+  els.queueDetail.title.textContent = task.title || "Untitled Task";
+  els.queueDetail.meta.textContent = `${task.state} · ${task.id}`;
+
+  const agent = task.agent || "unknown";
+  const priority = (task.priority || "p2").toLowerCase();
+
+  els.queueDetail.tags.innerHTML = [
+    `<span class="agent agent-${escapeHtml(agent)}">${escapeHtml(agent)}</span>`,
+    `<span class="priority priority-${escapeHtml(priority)}">${escapeHtml(priority.toUpperCase())}</span>`,
+    task.project ? `<span class="project-tag">${escapeHtml(task.project)}</span>` : "",
+    task.model ? `<span class="tag">${escapeHtml(task.model)}</span>` : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  els.queueDetail.content.textContent = task.content || "";
+
+  // Show/hide buttons based on state
+  const isPending = task.state === "pending";
+  const isInProgress = task.state === "in-progress";
+
+  els.queueDetail.btnLaunch.classList.toggle("hidden", !isPending);
+  els.queueDetail.btnBlock.classList.toggle("hidden", !isPending);
+  els.queueDetail.btnOutput.classList.toggle("hidden", !isInProgress);
+}
+
+function clearTaskSelection() {
+  state.selectedTaskId = null;
+  document.querySelectorAll(".taskCard").forEach((c) => c.classList.remove("active"));
+  els.queueDetail.title.textContent = "Task";
+  els.queueDetail.meta.textContent = "Select a task card.";
+  els.queueDetail.tags.innerHTML = "";
+  els.queueDetail.content.textContent = "";
+  els.queueDetail.view.classList.add("hidden");
+  els.queueDetail.empty.classList.remove("hidden");
+}
+
+async function moveTaskToBlocked(taskId) {
+  try {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/block`, {
+      method: "POST",
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      showToast(data.error || "Failed to move task", "error");
+      return;
+    }
+
+    showToast("Task moved to blocked", "success");
+    clearTaskSelection();
+    await fetchQueue();
+  } catch (error) {
+    showToast(`Error: ${error.message}`, "error");
   }
 }
 

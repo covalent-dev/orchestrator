@@ -22,13 +22,7 @@ from slugify import slugify
 # Ensure `src/` is importable when running from `src/dashboard/`
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from session_launcher import (
-    get_session_output,
-    get_tmux_session_name,
-    kill_session as kill_orch_session,
-    launch_from_template,
-    list_sessions,
-)
+from session_launcher import kill_session as kill_orch_session, launch_from_template
 from status_client import StatusClient
 
 app = Flask(__name__, static_folder="static")
@@ -156,25 +150,123 @@ def _safe_tmux_session_name(session_id: str) -> str:
     return sanitized[:64] if len(sanitized) > 64 else sanitized
 
 
+def _run_tmux(args: List[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["tmux"] + args, capture_output=True, text=True, check=False)
+
+
+def _tmux_has_session(tmux_session: str) -> bool:
+    result = _run_tmux(["has-session", "-t", tmux_session])
+    return result.returncode == 0
+
+
+def _resolve_tmux_session(session_id: str) -> str | None:
+    candidates = []
+
+    sanitized = _safe_tmux_session_name(session_id)
+    candidates.append(sanitized)
+
+    # Backwards-compat: older orchestration sessions were prefixed.
+    candidates.append(f"orch-{session_id}")
+    candidates.append(f"orch-{sanitized}")
+
+    # In case callers already pass a full tmux session name.
+    candidates.append(session_id)
+
+    seen = set()
+    for tmux_session in candidates:
+        if not tmux_session or tmux_session in seen:
+            continue
+        seen.add(tmux_session)
+        if _tmux_has_session(tmux_session):
+            return tmux_session
+    return None
+
+
+def _list_tmux_sessions() -> List[Dict[str, str]]:
+    result = _run_tmux([
+        "list-sessions",
+        "-F",
+        "#{session_name}|#{session_created}|#{session_windows}",
+    ])
+    if result.returncode != 0:
+        return []
+
+    sessions: List[Dict[str, str]] = []
+    for line in result.stdout.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split("|")
+        if len(parts) < 3:
+            continue
+        tmux_name, created, windows = parts[0], parts[1], parts[2]
+
+        # Only include sessions we likely own.
+        if tmux_name.startswith("orch-"):
+            session_id = tmux_name[len("orch-"):]
+        elif tmux_name.startswith("task-"):
+            session_id = tmux_name
+        else:
+            continue
+
+        sessions.append({
+            "id": session_id,
+            "tmux_name": tmux_name,
+            "created": created,
+            "windows": windows,
+        })
+
+    return sessions
+
+
+def _kill_tmux_session(session_id: str) -> bool:
+    if kill_orch_session(session_id):
+        return True
+
+    tmux_session = _resolve_tmux_session(session_id)
+    if tmux_session is None:
+        return False
+
+    result = _run_tmux(["kill-session", "-t", tmux_session])
+    if result.returncode != 0:
+        return False
+
+    try:
+        _status_client().delete(session_id)
+    except Exception:
+        pass
+
+    return True
+
+
 def _build_launch_command(agent: str, model: str, spec_path: Path) -> str:
     spec_arg = str(spec_path)
+    # Extract working dir from spec or use default
+    working_dir = os.environ.get("AGENT_WORKING_DIR", "~")
+    
     if agent == "codex":
         return (
-            "cd ~/projects/orchestration-v2 && "
+            f"cd {working_dir} && "
             f"codex --dangerously-bypass-approvals-and-sandbox -m {model} "
-            f"\"Read the task spec at {spec_arg} and execute it completely.\""
+            f"'Pick up task: {spec_arg} - Read the spec and execute it completely. "
+            f"Move to in-progress, update status, commit changes with git proof before marking complete.'"
         )
     if agent == "claude":
         return (
-            "cd ~/projects/orchestration-v2 && "
-            f"claude -m {model} "
-            f"\"Read the task spec at {spec_arg} and execute it completely.\""
+            f"cd {working_dir} && "
+            f"claude --model {model} --permission-mode acceptEdits -p "
+            f"'Pick up task: {spec_arg} - Read the spec and execute it completely. "
+            f"Move to in-progress, update status, commit changes with git proof before marking complete.'"
         )
     if agent == "gemini":
+        model_flag = f"-m {model}" if model else ""
         return (
-            "cd ~/projects/orchestration-v2 && "
-            f"gemini \"Read the task spec at {spec_arg} and execute it completely.\""
+            f"cd {working_dir} && "
+            f"GEMINI_API_KEY=$GEMINI_API_KEY gemini {model_flag} --yolo --prompt "
+            f"'Pick up task: {spec_arg} - Read the spec and execute it completely. "
+            f"Move to in-progress, update status, commit changes with git proof before marking complete.'"
         )
+    if agent == "human":
+        return f"echo 'Human task: {spec_arg}' && cat {spec_arg} && bash"
     raise ValueError(f"Unknown agent: {agent}")
 
 
@@ -197,11 +289,23 @@ def api_sessions():
     status_map, status_server_ok = _fetch_status_map()
 
     sessions: List[Dict[str, Any]] = []
-    for session in list_sessions():
+    for session in _list_tmux_sessions():
         session_id = session["id"]
         payload = status_map.get(session_id, {})
         state = payload.get("state") or "idle"
         message = payload.get("message") or "Running"
+        preview: List[str] | None = None
+        preview_result = _run_tmux([
+            "capture-pane",
+            "-t", session["tmux_name"],
+            "-p",
+            "-S", "-5",
+        ])
+        if preview_result.returncode == 0:
+            preview_lines = [ln for ln in preview_result.stdout.splitlines() if ln.strip() != ""]
+            if preview_lines:
+                preview = preview_lines[-3:]
+
         sessions.append({
             "id": session_id,
             "agent_type": _detect_agent_type(session_id),
@@ -209,6 +313,7 @@ def api_sessions():
             "message": message,
             "progress": payload.get("progress"),
             "updated_at": payload.get("updated_at"),
+            "output_preview": preview,
         })
 
     sessions.sort(key=lambda s: s["id"])
@@ -219,7 +324,7 @@ def api_sessions():
 def api_kill_session(session_id):
     """Kill a session."""
     try:
-        if kill_orch_session(session_id):
+        if _kill_tmux_session(session_id):
             return jsonify({"success": True, "message": f"Killed {session_id}"})
         return jsonify({"success": False, "error": "session not found"}), 404
     except Exception as exc:
@@ -230,12 +335,29 @@ def api_kill_session(session_id):
 def get_output(session_id):
     """Get recent output from a session."""
     try:
-        output = get_session_output(session_id, lines=80)
-        if output is None:
-            return jsonify({"output": "", "error": "session not found"}), 404
-        return jsonify({"output": output})
+        lines = request.args.get("lines", default=100, type=int)
+        lines = min(max(lines, 10), 500)
+
+        tmux_session = _resolve_tmux_session(session_id)
+        if tmux_session is None:
+            return jsonify({"error": "Session not found", "session_id": session_id}), 404
+
+        result = _run_tmux([
+            "capture-pane",
+            "-t", tmux_session,
+            "-p",
+            "-S", f"-{lines}",
+        ])
+        if result.returncode != 0:
+            return jsonify({"error": "Failed to capture output", "session_id": session_id}), 500
+
+        return jsonify({
+            "session_id": session_id,
+            "output": result.stdout,
+            "lines": lines,
+        })
     except Exception as exc:
-        return jsonify({"output": "", "error": str(exc)}), 500
+        return jsonify({"error": str(exc), "session_id": session_id}), 500
 
 
 @app.route('/api/sessions/kill-all', methods=['POST'])
@@ -244,10 +366,10 @@ def kill_all():
     try:
         killed: List[str] = []
         errors: List[str] = []
-        for session in list_sessions():
+        for session in _list_tmux_sessions():
             session_id = session["id"]
             try:
-                if kill_orch_session(session_id):
+                if _kill_tmux_session(session_id):
                     killed.append(session_id)
                 else:
                     errors.append(f"{session_id}: not found")
@@ -282,7 +404,8 @@ def launch_template():
 @app.route('/api/attach-command/<session_id>')
 def attach_command(session_id):
     """Return the tmux attach command for a session."""
-    return jsonify({"command": f"tmux attach -t {get_tmux_session_name(session_id)}"})
+    tmux_session = _resolve_tmux_session(session_id) or _safe_tmux_session_name(session_id)
+    return jsonify({"command": f"tmux attach -t {tmux_session}"})
 
 
 @app.route("/api/templates")
@@ -386,15 +509,105 @@ def api_create_task():
     })
 
 
+@app.route("/api/tasks/quick", methods=["POST"])
+def api_create_quick_task():
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+
+    title = (data.get("title") or "").strip()
+    agent = (data.get("agent") or "").strip()
+    prompt = (data.get("prompt") or "").strip()
+
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+    if not agent:
+        return jsonify({"error": "agent is required"}), 400
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    model = (data.get("model") or "").strip()
+    priority = (data.get("priority") or "P2").strip() or "P2"
+    project = (data.get("project") or "general").strip() or "general"
+    working_dir = (data.get("working_dir") or "~").strip() or "~"
+
+    task_id = generate_task_id(title)
+    created = datetime.now().date().isoformat()
+
+    spec_content = f"""# Task: {title}
+
+**ID:** {task_id}
+**Created:** {created}
+**Priority:** {priority}
+**Agent:** {agent}
+**Model:** {model}
+**Project:** {project}
+**Working Directory:** {working_dir}
+
+---
+
+## Objective
+
+{prompt}
+
+---
+
+## Completion Criteria
+
+- Task objective is complete
+- Changes committed with git proof (if code changes)
+"""
+
+    pending_dir = QUEUE_ROOT / "pending"
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = pending_dir / f"{task_id}.md"
+    try:
+        spec_path.write_text(spec_content, encoding="utf-8")
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "task_id": task_id,
+        "title": title,
+        "agent": agent,
+        "model": model,
+        "priority": priority,
+        "project": project,
+        "working_dir": working_dir,
+        "spec_path": _display_path(spec_path),
+        "status": "created",
+    }), 201
+
+
 @app.route("/api/tasks/<task_id>/launch", methods=["POST"])
 def api_launch_task(task_id: str):
-    launch_response = _launch_task(task_id)
+    data = request.get_json(silent=True) or {}
+    model_override = (data.get("model") or "").strip() or None
+
+    launch_response = _launch_task(task_id, model_override=model_override)
     if isinstance(launch_response, tuple):
         return launch_response
     return jsonify(launch_response)
 
 
-def _launch_task(task_id: str):
+@app.route("/api/tasks/<task_id>/block", methods=["POST"])
+def api_block_task(task_id: str):
+    """Move a task to the blocked state."""
+    pending_path = QUEUE_ROOT / "pending" / f"{task_id}.md"
+    blocked_path = QUEUE_ROOT / "blocked" / f"{task_id}.md"
+
+    if not pending_path.exists():
+        return jsonify({"success": False, "error": "Task not found in pending"}), 404
+
+    blocked_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.move(str(pending_path), str(blocked_path))
+        return jsonify({"success": True, "task_id": task_id, "state": "blocked"})
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+def _launch_task(task_id: str, model_override: str | None = None):
     pending_path = QUEUE_ROOT / "pending" / f"{task_id}.md"
     in_progress_path = QUEUE_ROOT / "in-progress" / f"{task_id}.md"
 
@@ -416,11 +629,18 @@ def _launch_task(task_id: str):
         return jsonify({"error": str(exc)}), 500
 
     agent = _extract_field(content, "Agent") or ""
-    model = _extract_field(content, "Model") or ""
+    model = model_override or _extract_field(content, "Model") or ""
     if not agent:
         return jsonify({"error": "Agent not found in task spec"}), 400
-    if agent in {"codex", "claude"} and not model:
-        return jsonify({"error": "Model not found in task spec"}), 400
+    
+    # Use default models if not specified
+    DEFAULT_MODELS = {
+        "codex": "o3",
+        "claude": "claude-sonnet-4-20250514",
+        "gemini": "gemini-2.5-pro",
+    }
+    if not model and agent in DEFAULT_MODELS:
+        model = DEFAULT_MODELS[agent]
 
     session_id = _derive_session_id(task_id)
     tmux_session = _safe_tmux_session_name(session_id)
@@ -440,34 +660,80 @@ def _launch_task(task_id: str):
         return jsonify({"error": result.stderr.strip() or "Failed to launch session"}), 500
 
     return {
+        "success": True,
         "task_id": task_id,
         "session_id": session_id,
         "agent": agent,
+        "model": model,
         "status": "launched",
     }
 
 
 @app.route("/api/agents")
 def api_agents():
+    agents = [
+        {
+            "id": "codex",
+            "name": "Codex (OpenAI)",
+            "models": ["o4-mini", "gpt-4.1", "o3", "gpt-5"],
+            "default": "o3",
+        },
+        {
+            "id": "claude",
+            "name": "Claude (Anthropic)",
+            "models": [
+                "claude-sonnet-4-20250514",
+                "claude-opus-4-20250514",
+                "claude-3-5-haiku-20241022",
+            ],
+            "default": "claude-sonnet-4-20250514",
+        },
+        {
+            "id": "gemini",
+            "name": "Gemini (Google)",
+            "models": ["gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
+            "default": "gemini-2.5-pro",
+        },
+        {
+            "id": "human",
+            "name": "Human",
+            "models": ["human"],
+            "default": "human",
+        },
+    ]
+
     return jsonify({
-        "agents": [
-            {
-                "id": "codex",
-                "name": "Codex (OpenAI)",
-                "models": ["gpt-5", "gpt-4.1", "o3", "o4-mini"],
-            },
-            {
-                "id": "claude",
-                "name": "Claude (Anthropic)",
-                "models": ["sonnet", "opus", "haiku"],
-            },
-            {
-                "id": "gemini",
-                "name": "Gemini (Google)",
-                "models": ["gemini-3-flash", "gemini-2.5-pro"],
-            },
-        ]
+        # Back-compat: frontend expects a mapping of agent -> [models]
+        "agents": {agent["id"]: agent["models"] for agent in agents},
+        # New clients can use per-agent metadata with defaults.
+        "agent_list": agents,
+        "defaults": {agent["id"]: agent["default"] for agent in agents},
     })
+
+
+@app.route("/api/tasks/<task_id>")
+def api_get_task(task_id: str):
+    """Get full task details including spec content."""
+    for state in ["pending", "in-progress", "blocked", "completed"]:
+        path = QUEUE_ROOT / state / f"{task_id}.md"
+        if path.exists():
+            try:
+                content = path.read_text()
+                task = _parse_task_spec(path)
+                return jsonify({
+                    "id": task_id,
+                    "state": state,
+                    "title": task.get("title"),
+                    "agent": task.get("agent"),
+                    "model": task.get("model"),
+                    "priority": task.get("priority"),
+                    "project": task.get("project"),
+                    "created": task.get("created"),
+                    "content": content
+                })
+            except Exception as exc:
+                return jsonify({"error": str(exc)}), 500
+    return jsonify({"error": "Task not found"}), 404
 
 
 @app.route("/api/queue")

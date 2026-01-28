@@ -165,34 +165,59 @@
 
       <!-- Queue View -->
       <div id="queue-view" class="hidden">
-        <div class="panel">
-          <div class="panelHeader">
-            <h2>Task Queue</h2>
-            <div class="small">Polling <b>5s</b></div>
-          </div>
-          <div class="content">
-            <div id="queue-empty" class="muted empty hidden">
-              No tasks in queue. Create a new task to get started.
+        <div class="layout">
+          <section class="panel">
+            <div class="panelHeader">
+              <h2>Task Queue</h2>
+              <div class="small">Polling <b>5s</b></div>
             </div>
-            <div id="queue-board" class="kanbanGrid queueKanban">
-              <div class="col">
-                <div class="colHead"><div>Pending</div><span id="count-pending">0</span></div>
-                <div class="cards" id="col-pending"></div>
+            <div class="content">
+              <div id="queue-empty" class="muted empty hidden">
+                No tasks in queue. Create a new task to get started.
               </div>
-              <div class="col">
-                <div class="colHead"><div>In Progress</div><span id="count-in-progress">0</span></div>
-                <div class="cards" id="col-in-progress"></div>
-              </div>
-              <div class="col">
-                <div class="colHead"><div>Blocked</div><span id="count-blocked">0</span></div>
-                <div class="cards" id="col-blocked"></div>
-              </div>
-              <div class="col">
-                <div class="colHead"><div>Completed</div><span id="count-completed">0</span></div>
-                <div class="cards" id="col-completed"></div>
+              <div id="queue-board" class="kanbanGrid queueKanban">
+                <div class="col">
+                  <div class="colHead"><div>Pending</div><span id="count-pending">0</span></div>
+                  <div class="cards" id="col-pending"></div>
+                </div>
+                <div class="col">
+                  <div class="colHead"><div>In Progress</div><span id="count-in-progress">0</span></div>
+                  <div class="cards" id="col-in-progress"></div>
+                </div>
+                <div class="col">
+                  <div class="colHead"><div>Blocked</div><span id="count-blocked">0</span></div>
+                  <div class="cards" id="col-blocked"></div>
+                </div>
+                <div class="col">
+                  <div class="colHead"><div>Completed</div><span id="count-completed">0</span></div>
+                  <div class="cards" id="col-completed"></div>
+                </div>
               </div>
             </div>
-          </div>
+          </section>
+
+          <section class="panel detail" id="queue-detail">
+            <div class="panelHeader">
+              <h2 id="queue-detail-title">Task</h2>
+              <div class="small" id="queue-detail-meta">Select a task card.</div>
+            </div>
+            <div class="content">
+              <div id="queue-detail-empty" class="muted">Select a task card to view details.</div>
+
+              <div id="queue-detail-view" class="hidden">
+                <div class="metaRow" id="queue-detail-tags"></div>
+                <div class="divider"></div>
+                <div class="detailActions">
+                  <button id="btn-queue-launch" class="btn small primary">Launch</button>
+                  <button id="btn-queue-block" class="btn small">Move to Blocked</button>
+                  <button id="btn-queue-output" class="btn small hidden">View Output</button>
+                </div>
+                <div class="divider"></div>
+                <h4>Task Spec</h4>
+                <pre id="queue-detail-content" class="pre">Loading…</pre>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
         </main>
