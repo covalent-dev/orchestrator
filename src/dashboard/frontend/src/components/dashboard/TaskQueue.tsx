@@ -4,17 +4,17 @@ import { useState } from 'react';
 import { Play, Clock, AlertCircle, CheckCircle, ChevronRight, X } from 'lucide-react';
 
 const priorityColors: Record<string, string> = {
-    p0: 'text-red-500 border-red-500',
-    p1: 'text-orange-500 border-orange-500',
-    p2: 'text-blue-500 border-blue-500',
-    p3: 'text-gray-500 border-gray-500',
+    p0: 'text-red-300 border-red-900/50 bg-red-950/40',
+    p1: 'text-yellow-200 border-yellow-900/50 bg-yellow-950/40',
+    p2: 'text-emerald-300 border-emerald-900/50 bg-emerald-950/40',
+    p3: 'text-zinc-400 border-zinc-700/50 bg-zinc-900/40',
 };
 
 const stateConfig = {
-    pending: { icon: Clock, label: 'PENDING', color: 'text-yellow-500', bg: 'bg-black border-yellow-500' },
-    'in-progress': { icon: Play, label: 'IN PROGRESS', color: 'text-blue-500', bg: 'bg-black border-blue-500' },
-    blocked: { icon: AlertCircle, label: 'BLOCKED', color: 'text-red-500', bg: 'bg-black border-red-500' },
-    completed: { icon: CheckCircle, label: 'COMPLETED', color: 'text-green-500', bg: 'bg-black border-green-500' },
+    pending: { icon: Clock, label: 'Pending', color: 'text-zinc-400', bg: 'bg-black border-zinc-800' },
+    'in-progress': { icon: Play, label: 'In Progress', color: 'text-blue-300', bg: 'bg-black border-blue-900/30' },
+    blocked: { icon: AlertCircle, label: 'Blocked', color: 'text-red-300', bg: 'bg-black border-red-900/30' },
+    completed: { icon: CheckCircle, label: 'Completed', color: 'text-emerald-300', bg: 'bg-black border-emerald-900/30' },
 };
 
 interface TaskDetailPanelProps {
@@ -32,73 +32,73 @@ function TaskDetailPanel({ taskId, onClose, onLaunch }: TaskDetailPanelProps) {
 
     if (isLoading) {
         return (
-            <div className="bg-black border-l border-[#333] w-96 p-4">
-                <div className="animate-pulse text-gray-500 font-mono">LOADING...</div>
+            <div className="bg-black border-l border-white/10 w-96 p-4">
+                <div className="animate-pulse text-gray-500">Loading...</div>
             </div>
         );
     }
 
     return (
-        <div className="bg-black border-l border-[#333] w-96 flex flex-col">
-            <div className="flex justify-between items-center p-4 border-b border-[#333]">
-                <h3 className="font-bold text-white truncate font-mono uppercase">{task?.title || taskId}</h3>
-                <button onClick={onClose} className="text-gray-500 hover:text-white">
+        <div className="bg-black border-l border-white/10 w-96 flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b border-white/10">
+                <h3 className="font-semibold text-white truncate">{task?.title || taskId}</h3>
+                <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
                     <X size={18} />
                 </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                <div className="flex gap-2 flex-wrap font-mono text-xs">
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+                <div className="flex gap-2 flex-wrap text-xs shrink-0">
                     {task?.priority && (
-                        <span className={`px-2 py-1 border ${priorityColors[task.priority] || priorityColors.p2} uppercase font-bold`}>
-                            {task.priority}
+                        <span className={`px-2 py-0.5 border rounded-md font-medium ${priorityColors[task.priority.toLowerCase()] || priorityColors.p2}`}>
+                            {task.priority.toUpperCase()}
                         </span>
                     )}
                     {task?.agent && (
-                        <span className="px-2 py-1 border border-purple-500 text-purple-500 uppercase font-bold">
+                        <span className="px-2 py-0.5 border border-purple-500/50 bg-purple-500/10 text-purple-400 rounded-md font-medium capitalize">
                             {task.agent}
                         </span>
                     )}
                     {task?.state && (
-                        <span className="px-2 py-1 bg-[#222] text-gray-400 border border-[#333] uppercase">
+                        <span className="px-2 py-0.5 bg-white/5 text-gray-400 border border-white/10 rounded-md capitalize">
                             {task.state}
                         </span>
                     )}
                 </div>
 
                 {task?.content && (
-                    <div className="bg-black border border-[#333] p-3 text-sm text-gray-300 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">
+                    <div className="bg-black border border-white/10 rounded-lg p-3 text-sm text-gray-300 whitespace-pre-wrap flex-1">
                         {task.content}
                     </div>
                 )}
 
                 {task?.state === 'pending' && (
-                    <div className="space-y-2">
-                        <label className="block text-xs font-bold text-gray-500 uppercase">Model Override</label>
+                    <div className="space-y-2 shrink-0">
+                        <label className="block text-xs font-semibold text-gray-500">Model Override</label>
                         <select
                             value={selectedModel}
                             onChange={e => setSelectedModel(e.target.value)}
-                            className="w-full bg-black border border-[#333] p-2 text-sm focus:border-white outline-none font-mono rounded-none"
+                            className="w-full bg-black border border-white/10 p-2 text-sm focus:border-white/30 outline-none rounded-md"
                         >
-                            <option value="">DEFAULT</option>
-                            <option value="sonnet">SONNET</option>
-                            <option value="opus">OPUS</option>
-                            <option value="gpt-4o">GPT-4O</option>
-                            <option value="o3">O3</option>
-                            <option value="gemini-2.5-pro">GEMINI 2.5 PRO</option>
+                            <option value="">Default (from task)</option>
+                            <option value="sonnet">Sonnet</option>
+                            <option value="opus">Opus</option>
+                            <option value="gpt-4o">GPT-4o</option>
+                            <option value="o3">o3</option>
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
                         </select>
                     </div>
                 )}
             </div>
 
             {task?.state === 'pending' && (
-                <div className="p-4 border-t border-[#333]">
+                <div className="p-4 border-t border-white/10">
                     <button
                         onClick={() => onLaunch(taskId, selectedModel || undefined)}
-                        className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 text-black text-sm font-bold flex items-center justify-center gap-2 transition-none uppercase rounded-none"
+                        className="w-full px-4 py-2 bg-white hover:bg-gray-200 text-black text-sm font-semibold flex items-center justify-center gap-2 transition-colors rounded-md"
                     >
                         <Play size={16} fill="currentColor" />
-                        LAUNCH_TASK
+                        Launch Task
                     </button>
                 </div>
             )}
@@ -127,7 +127,7 @@ export function TaskQueue() {
     });
 
     if (isLoading) {
-        return <div className="text-gray-500 p-4 font-mono">LOADING_QUEUE...</div>;
+        return <div className="text-gray-500 p-4">Loading queue...</div>;
     }
 
     const renderColumn = (state: keyof typeof stateConfig, tasks: QueueItem[]) => {
@@ -135,12 +135,12 @@ export function TaskQueue() {
         const Icon = config.icon;
 
         return (
-            <div className="flex-1 min-w-[280px] bg-black border border-[#333] flex flex-col max-h-full">
-                <div className={`p-3 border-b border-[#333] bg-[#111]`}>
+            <div className="flex-1 min-w-[280px] bg-black border border-white/10 rounded-lg flex flex-col max-h-full overflow-hidden">
+                <div className={`p-3 border-b border-white/10 bg-white/5`}>
                     <div className="flex items-center gap-2">
                         <Icon size={16} className={config.color} />
-                        <span className={`font-bold uppercase tracking-tight ${config.color}`}>{config.label}</span>
-                        <span className="ml-auto text-xs text-black bg-[#333] text-white px-2 py-0.5 font-bold">
+                        <span className={`font-semibold ${config.color}`}>{config.label}</span>
+                        <span className="ml-auto text-xs text-gray-400 bg-white/5 px-2 py-0.5 rounded-full font-medium">
                             {tasks.length}
                         </span>
                     </div>
@@ -150,21 +150,21 @@ export function TaskQueue() {
                         <div
                             key={task.id}
                             onClick={() => setSelectedTask(task.id)}
-                            className={`p-3 bg-black border cursor-pointer hover:border-white transition-none ${selectedTask === task.id ? 'border-blue-500 ring-1 ring-blue-500' : 'border-[#333]'
+                            className={`p-3 bg-black border rounded-md cursor-pointer hover:border-white/30 transition-colors ${selectedTask === task.id ? 'border-blue-500/50 ring-1 ring-blue-500/20' : 'border-white/10'
                                 }`}
                         >
                             <div className="flex items-start justify-between gap-2">
-                                <span className="text-sm text-gray-300 line-clamp-2 font-mono">{task.title}</span>
+                                <span className="text-sm text-gray-300 line-clamp-2 font-medium">{task.title}</span>
                                 <ChevronRight size={14} className="text-gray-600 flex-shrink-0 mt-1" />
                             </div>
                             <div className="flex gap-1 mt-3 flex-wrap">
                                 {task.priority && (
-                                    <span className={`text-[10px] px-1 py-0.5 border ${priorityColors[task.priority] || priorityColors.p2} font-bold uppercase`}>
+                                    <span className={`text-[10px] px-1.5 py-0.5 border rounded-md ${priorityColors[task.priority.toLowerCase()] || priorityColors.p2} font-medium uppercase`}>
                                         {task.priority}
                                     </span>
                                 )}
                                 {task.agent && (
-                                    <span className="text-[10px] px-1 py-0.5 border border-purple-500 text-purple-500 font-bold uppercase">
+                                    <span className="text-[10px] px-1.5 py-0.5 border border-purple-500/30 bg-purple-500/10 text-purple-400 rounded-md font-medium capitalize">
                                         {task.agent}
                                     </span>
                                 )}
@@ -172,7 +172,7 @@ export function TaskQueue() {
                         </div>
                     ))}
                     {tasks.length === 0 && (
-                        <div className="text-center text-gray-700 text-xs py-8 uppercase tracking-widest">No tasks</div>
+                        <div className="text-center text-gray-600 text-xs py-8">No tasks</div>
                     )}
                 </div>
             </div>
@@ -183,18 +183,18 @@ export function TaskQueue() {
     if (showCompleted) activeStates.push('completed');
 
     return (
-        <div className="flex h-full font-mono">
+        <div className="flex h-full font-sans">
             <div className="flex-1 flex flex-col p-4 overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-white uppercase tracking-tight border-l-4 border-blue-500 pl-3">Task Queue</h2>
-                    <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                    <h2 className="text-lg font-semibold text-white tracking-tight pl-1">Task Queue</h2>
+                    <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer hover:text-white transition-colors">
                         <input
                             type="checkbox"
                             checked={showCompleted}
                             onChange={e => setShowCompleted(e.target.checked)}
-                            className="bg-black border border-[#333] rounded-none focus:ring-0 checked:bg-blue-500"
+                            className="bg-black border border-gray-600 rounded-sm focus:ring-0 checked:bg-blue-600 checkbox-sm"
                         />
-                        SHOW_COMPLETED
+                        Show Completed
                     </label>
                 </div>
                 <div className="flex gap-4 overflow-x-auto flex-1 pb-2">

@@ -11,10 +11,10 @@ function SidebarItem({ icon: Icon, active }: SidebarItemProps) {
     return (
         <div
             className={clsx(
-                "p-3 cursor-pointer transition-none border-l-2",
+                "p-3 cursor-pointer transition-colors rounded-lg",
                 active
-                    ? "border-blue-500 text-white bg-[#111]"
-                    : "border-transparent text-gray-500 hover:text-white hover:bg-[#111] hover:border-gray-700"
+                    ? "text-white bg-white/10"
+                    : "text-gray-500 hover:text-white hover:bg-white/5"
             )}
         >
             <Icon size={24} strokeWidth={1.5} />

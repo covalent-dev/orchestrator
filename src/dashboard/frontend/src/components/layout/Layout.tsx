@@ -12,7 +12,7 @@ interface LayoutProps {
 
 export function Layout({ children, onNewTask, activeView = 'queue', onViewChange }: LayoutProps) {
     return (
-        <div className="flex h-screen bg-black text-gray-300 overflow-hidden font-mono">
+        <div className="flex h-screen bg-black text-gray-300 overflow-hidden font-sans">
             <Sidebar />
             <div className="flex-1 flex flex-col min-w-0">
                 <Header onNewTask={onNewTask} activeView={activeView} onViewChange={onViewChange} />
@@ -21,10 +21,10 @@ export function Layout({ children, onNewTask, activeView = 'queue', onViewChange
                 </main>
 
                 {/* Status Bar */}
-                <footer className="h-6 bg-black border-t border-[#333] text-gray-400 flex items-center px-3 text-xs justify-between select-none font-mono">
+                <footer className="h-6 bg-black border-t border-white/10 text-gray-500 flex items-center px-3 text-xs justify-between select-none font-sans">
                     <div className="flex items-center gap-4">
                         <span className="flex items-center gap-2">
-                            <span className="w-2 h-2 bg-green-500"></span>
+                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
                             Connected to Localhost
                         </span>
                         <span>main*</span>
