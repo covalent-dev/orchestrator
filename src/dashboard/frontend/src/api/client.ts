@@ -117,3 +117,22 @@ export const moveTask = async (taskId: string, target: 'pending' | 'blocked' | '
     const { data } = await api.post(`/tasks/${taskId}/move`, { target });
     return data;
 };
+
+// Agent configuration
+export interface AgentConfig {
+    id: string;
+    name: string;
+    models: string[];
+    default: string;
+}
+
+export interface AgentsData {
+    agents: Record<string, string[]>;
+    agent_list: AgentConfig[];
+    defaults: Record<string, string>;
+}
+
+export const fetchAgents = async () => {
+    const { data } = await api.get<AgentsData>('/agents');
+    return data;
+};

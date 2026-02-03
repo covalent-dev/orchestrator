@@ -1,6 +1,6 @@
 import { Dialog } from '@headlessui/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchTemplates, createTask, createQuickTask, fetchTemplateDetail, type Template } from '../../api/client';
+import { fetchTemplates, createTask, createQuickTask, fetchTemplateDetail, fetchAgents, type Template, type AgentConfig } from '../../api/client';
 import { useState, useEffect } from 'react';
 import { X, Play, Zap, FileText } from 'lucide-react';
 import axios from 'axios';
@@ -18,10 +18,25 @@ export function TaskModal({ isOpen, onClose }: TaskModalProps) {
     const [selectedTemplate, setSelectedTemplate] = useState<string>('');
     const [fields, setFields] = useState<Record<string, string>>({});
     const [agent, setAgent] = useState('claude');
-    const [model, setModel] = useState('sonnet');
+    const [model, setModel] = useState('');
     const [priority, setPriority] = useState('P2');
     const [launchImmediately, setLaunchImmediately] = useState(true);
     const [submitError, setSubmitError] = useState<string | null>(null);
+
+    // Fetch agents configuration
+    const { data: agentsData } = useQuery({ queryKey: ['agents'], queryFn: fetchAgents });
+
+    // Get current agent's models and default
+    const currentAgentConfig = agentsData?.agent_list?.find((a: AgentConfig) => a.id === agent);
+    const availableModels = currentAgentConfig?.models || [];
+    const defaultModel = currentAgentConfig?.default || '';
+
+    // Set default model when agent changes or on initial load
+    useEffect(() => {
+        if (defaultModel && (!model || !availableModels.includes(model))) {
+            setModel(defaultModel);
+        }
+    }, [agent, defaultModel, availableModels, model]);
 
     const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -173,9 +188,15 @@ export function TaskModal({ isOpen, onClose }: TaskModalProps) {
                                     onChange={e => setAgent(e.target.value)}
                                     className="w-full bg-black border border-white/10 p-2 text-sm focus:border-white/30 outline-none rounded-md text-white"
                                 >
-                                    <option value="claude">Claude</option>
-                                    <option value="codex">Codex</option>
-                                    <option value="gemini">Gemini</option>
+                                    {agentsData?.agent_list?.map((a: AgentConfig) => (
+                                        <option key={a.id} value={a.id}>{a.name}</option>
+                                    )) || (
+                                        <>
+                                            <option value="claude">Claude</option>
+                                            <option value="codex">Codex</option>
+                                            <option value="gemini">Gemini</option>
+                                        </>
+                                    )}
                                 </select>
                             </div>
                             <div>
@@ -185,12 +206,9 @@ export function TaskModal({ isOpen, onClose }: TaskModalProps) {
                                     onChange={e => setModel(e.target.value)}
                                     className="w-full bg-black border border-white/10 p-2 text-sm focus:border-white/30 outline-none rounded-md text-white"
                                 >
-                                    <option value="sonnet">Sonnet</option>
-                                    <option value="opus">Opus</option>
-                                    <option value="gpt-4o">GPT-4o</option>
-                                    <option value="o3">o3</option>
-                                    <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                    {availableModels.map((m: string) => (
+                                        <option key={m} value={m}>{m}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div>
@@ -200,10 +218,10 @@ export function TaskModal({ isOpen, onClose }: TaskModalProps) {
                                     onChange={e => setPriority(e.target.value)}
                                     className="w-full bg-black border border-white/10 p-2 text-sm focus:border-white/30 outline-none rounded-md text-white"
                                 >
-                                    <option value="p0">P0 - Critical</option>
-                                    <option value="p1">P1 - High</option>
-                                    <option value="p2">P2 - Normal</option>
-                                    <option value="p3">P3 - Low</option>
+                                    <option value="P0">P0 - Critical</option>
+                                    <option value="P1">P1 - High</option>
+                                    <option value="P2">P2 - Normal</option>
+                                    <option value="P3">P3 - Low</option>
                                 </select>
                             </div>
                         </div>
