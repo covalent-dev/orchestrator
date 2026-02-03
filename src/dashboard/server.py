@@ -889,6 +889,29 @@ def api_stats():
     return jsonify(stats)
 
 
+@app.route("/api/health")
+def api_health():
+    """Health check endpoint."""
+    status_ok = False
+    try:
+        status_ok = _status_client().get_all() is not None
+    except Exception:
+        pass
+
+    tmux_ok = _run_tmux(["list-sessions"]).returncode in [0, 1]  # 1 = no sessions
+    queue_ok = QUEUE_ROOT.exists()
+
+    return jsonify({
+        "status": "ok" if (tmux_ok and queue_ok) else "degraded",
+        "checks": {
+            "queue_dir": queue_ok,
+            "tmux": tmux_ok,
+            "status_server": status_ok,
+        },
+        "timestamp": datetime.now().isoformat(),
+    })
+
+
 @app.route("/api/queue")
 def api_queue():
     result = {"pending": [], "in-progress": [], "blocked": [], "completed": []}
