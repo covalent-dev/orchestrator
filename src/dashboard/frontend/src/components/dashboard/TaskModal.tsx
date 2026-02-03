@@ -262,7 +262,7 @@ export function TaskModal({ isOpen, onClose }: TaskModalProps) {
                                     <div className="space-y-4 border-t border-white/10 pt-4">
                                         <h4 className="text-sm font-semibold text-blue-400">Template Preview</h4>
                                         <div className="max-h-64 overflow-y-auto bg-zinc-900 border border-white/10 rounded-md p-3">
-                                            <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono">{templateDetail.content?.slice(0, 2000)}{templateDetail.content?.length > 2000 ? '\n...(truncated)' : ''}</pre>
+                                            <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono">{templateDetail.content}</pre>
                                         </div>
 
                                         {templateDetail.fields.filter(f => !f.auto).length > 0 && (

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchQueue, launchTask, getTaskDetail, type QueueItem, type QueueData } from '../../api/client';
+import { fetchQueue, launchTask, getTaskDetail, type QueueItem, type QueueData, api } from '../../api/client';
 import { useState } from 'react';
-import { Play, Clock, AlertCircle, CheckCircle, ChevronRight, X } from 'lucide-react';
+import { Play, Clock, AlertCircle, CheckCircle, ChevronRight, X, ArrowRight } from 'lucide-react';
 
 const priorityColors: Record<string, string> = {
     p0: 'text-red-300 border-red-900/50 bg-red-950/40',
@@ -25,10 +25,24 @@ interface TaskDetailPanelProps {
 
 function TaskDetailPanel({ taskId, onClose, onLaunch }: TaskDetailPanelProps) {
     const [selectedModel, setSelectedModel] = useState('');
+    const queryClient = useQueryClient();
     const { data: task, isLoading } = useQuery({
         queryKey: ['task', taskId],
         queryFn: () => getTaskDetail(taskId),
     });
+
+    const moveMutation = useMutation({
+        mutationFn: ({ to }: { to: string }) => api.post(`/tasks/${taskId}/move`, { to }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['queue'] });
+            queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+        },
+    });
+
+    const getMoveOptions = (currentState: string) => {
+        const allStates = ['pending', 'in-progress', 'blocked', 'completed'];
+        return allStates.filter(s => s !== currentState);
+    };
 
     if (isLoading) {
         return (
@@ -100,6 +114,25 @@ function TaskDetailPanel({ taskId, onClose, onLaunch }: TaskDetailPanelProps) {
                         <Play size={16} fill="currentColor" />
                         Launch Task
                     </button>
+                </div>
+            )}
+
+            {task?.state && (
+                <div className="p-4 border-t border-white/10">
+                    <label className="block text-xs font-semibold text-gray-500 mb-2">Move to</label>
+                    <div className="flex gap-2 flex-wrap">
+                        {getMoveOptions(task.state).map(targetState => (
+                            <button
+                                key={targetState}
+                                onClick={() => moveMutation.mutate({ to: targetState })}
+                                disabled={moveMutation.isPending}
+                                className="px-3 py-1.5 text-xs border border-white/10 hover:border-white/30 bg-white/5 hover:bg-white/10 text-gray-300 rounded-md flex items-center gap-1 transition-colors disabled:opacity-50"
+                            >
+                                <ArrowRight size={12} />
+                                {targetState}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>
