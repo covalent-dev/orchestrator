@@ -835,6 +835,36 @@ def api_move_task(task_id: str):
     return jsonify({"error": "Task not found"}), 404
 
 
+@app.route("/api/tasks/<task_id>/priority", methods=["POST"])
+def api_set_priority(task_id: str):
+    """Change task priority without editing whole spec."""
+    data = request.get_json(silent=True) or {}
+    new_priority = _normalize_priority(data.get("priority"), default="")
+
+    if not new_priority:
+        return jsonify({"error": "priority is required (P0, P1, P2, or P3)"}), 400
+
+    for state in ["pending", "in-progress", "blocked", "completed"]:
+        path = QUEUE_ROOT / state / f"{task_id}.md"
+        if path.exists():
+            try:
+                content = path.read_text()
+                # Update priority in content
+                new_content, count = re.subn(
+                    r"(\*\*Priority:\*\*\s*)(P[0-3]|\S+)",
+                    f"\\g<1>{new_priority}",
+                    content
+                )
+                if count == 0:
+                    return jsonify({"error": "Could not find Priority field in task spec"}), 400
+
+                path.write_text(new_content, encoding="utf-8")
+                return jsonify({"success": True, "task_id": task_id, "priority": new_priority})
+            except Exception as exc:
+                return jsonify({"error": str(exc)}), 500
+    return jsonify({"error": "Task not found"}), 404
+
+
 @app.route("/api/tasks/<task_id>/duplicate", methods=["POST"])
 def api_duplicate_task(task_id: str):
     """Duplicate a task with a new ID."""
