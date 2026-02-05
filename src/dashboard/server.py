@@ -832,6 +832,8 @@ def api_move_task(task_id: str):
                 target_path = QUEUE_ROOT / target_state / f"{task_id}.md"
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(path), str(target_path))
+                # `mv` preserves mtime on most filesystems; touch to make completed sorting reflect latest moves.
+                target_path.touch()
                 return jsonify({"success": True, "task_id": task_id, "from": state, "to": target_state})
             except Exception as exc:
                 return jsonify({"error": str(exc)}), 500
@@ -972,26 +974,25 @@ def api_queue():
                 continue
 
     def priority_sort_key(item):
-        """Sort by priority: P0 first, then P1, P2, P3, unknown last"""
-        # Normalize to uppercase for case-insensitive matching
+        """Sort by priority: P0 first, then P1, P2, P3, unknown last."""
         p = (item.get("priority") or "").upper()
-        # Extract numeric priority (P0 -> 0, P1 -> 1, etc.)
-        if p.startswith("P") and len(p) > 1 and p[1].isdigit():
-            return (int(p[1]), item.get("id") or "")
-        # Handle "P0 (prerequisite...)" style
-        if "P0" in p:
-            return (0, item.get("id") or "")
-        if "P1" in p:
-            return (1, item.get("id") or "")
-        if "P2" in p:
-            return (2, item.get("id") or "")
-        if "P3" in p:
-            return (3, item.get("id") or "")
-        return (99, item.get("id") or "")  # Unknown priority last
+        for i in range(0, 4):
+            if re.search(rf"\\bP{i}\\b", p) or f"P{i}" in p:
+                return i
+        return 99
+
+    def pending_sort_key(item):
+        """Sort pending by priority, then by task group (A/H/O...), then numeric suffix (01, 02, ...)."""
+        task_id = item.get("id") or ""
+        match = re.search(r"-([A-Z])([0-9]+)-", task_id, re.IGNORECASE)
+        group = match.group(1).upper() if match else "Z"
+        num = int(match.group(2)) if match else 9999
+        return (priority_sort_key(item), group, num, task_id)
 
     # Sort pending, in-progress, blocked by priority
-    for state in ["pending", "in-progress", "blocked"]:
-        result[state].sort(key=priority_sort_key)
+    result["pending"].sort(key=pending_sort_key)
+    for state in ["in-progress", "blocked"]:
+        result[state].sort(key=lambda item: (priority_sort_key(item), item.get("id") or ""))
     
     # Sort completed by modification time (most recent first)
     result["completed"].sort(key=lambda x: x.get("mtime", 0), reverse=True)

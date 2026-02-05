@@ -174,13 +174,24 @@ export function TaskQueue({ selectedTaskId, onSelectedTaskIdChange }: TaskQueueP
         const config = stateConfig[state];
         const Icon = config.icon;
 
-        // Sort completed tasks by creation time (most recent first)
+        const completionMs = (task: QueueItem) => {
+            if (typeof task.mtime === 'number' && task.mtime > 0) {
+                return task.mtime * 1000;
+            }
+            const createdMs = Date.parse(task.created || '');
+            return Number.isFinite(createdMs) ? createdMs : 0;
+        };
+
+        // Sort completed tasks by completion time (most recent first).
         const displayTasks = state === 'completed'
-            ? [...tasks].sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+            ? [...tasks].sort((a, b) => completionMs(b) - completionMs(a) || a.id.localeCompare(b.id))
             : tasks;
 
-        const getTimeBadge = (created: string) => {
-            const date = new Date(created);
+        const getTimeBadge = (task: QueueItem) => {
+            const ts = completionMs(task);
+            if (!ts) return null;
+
+            const date = new Date(ts);
             const now = new Date();
             const diffMs = now.getTime() - date.getTime();
             const diffHours = diffMs / (1000 * 60 * 60);
@@ -218,7 +229,7 @@ export function TaskQueue({ selectedTaskId, onSelectedTaskIdChange }: TaskQueueP
                                 <ChevronRight size={14} className="text-gray-600 flex-shrink-0 mt-1" />
                             </div>
                             <div className="flex gap-1 mt-3 flex-wrap items-center">
-                                {state === 'completed' && getTimeBadge(task.created)}
+                                {state === 'completed' && getTimeBadge(task)}
                                 {task.priority && (
                                     <span className={`text-[10px] px-1.5 py-0.5 border rounded-md ${priorityColors[task.priority.toLowerCase()] || priorityColors.p2} font-medium uppercase`}>
                                         {task.priority}
