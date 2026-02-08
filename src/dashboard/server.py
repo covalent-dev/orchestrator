@@ -165,14 +165,14 @@ def _parse_task_spec(path: Path) -> Dict[str, Any]:
     title = title_match.group(1).strip() if title_match else path.stem
 
     return {
-        "id": _extract_field(content, "ID") or path.stem,
+        "id": (_extract_field(content, "ID") or path.stem).strip(),
         "title": title,
-        "agent": _extract_field(content, "Agent"),
-        "priority": _extract_field(content, "Priority"),
-        "project": _extract_field(content, "Project"),
-        "created": _extract_field(content, "Created"),
-        "duration": _extract_field(content, "Estimated Duration"),
-        "model": _extract_field(content, "Model"),
+        "agent": (_extract_field(content, "Agent") or "").strip(),
+        "priority": (_extract_field(content, "Priority") or "").strip(),
+        "project": (_extract_field(content, "Project") or "").strip(),
+        "created": (_extract_field(content, "Created") or "").strip(),
+        "duration": (_extract_field(content, "Estimated Duration") or "").strip(),
+        "model": (_extract_field(content, "Model") or "").strip(),
     }
 
 
@@ -997,7 +997,11 @@ def api_queue():
     # Sort completed by modification time (most recent first)
     result["completed"].sort(key=lambda x: x.get("mtime", 0), reverse=True)
 
-    return jsonify(result)
+    response = jsonify(result)
+    # Queue data is polled every few seconds by the dashboard; prevent stale browser caches.
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.route('/assets/<path:filename>')
