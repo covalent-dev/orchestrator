@@ -102,7 +102,6 @@ INFORMATIONAL_PROMPT_PREFIXES = (
     "use /",
 )
 PROMPT_STALE_SECONDS = 15
-BACKGROUND_PROGRESS_STALE_SECONDS = 300
 
 
 def _detect_agent_type(session_id: str) -> str:
@@ -242,15 +241,6 @@ def _infer_status_from_output(lines: List[str], last_activity_ts: int | None) ->
             and not has_background_progress
         ):
             return "needs_input", "Awaiting input"
-        if (
-            has_background_progress
-            and activity_age is not None
-            and activity_age > BACKGROUND_PROGRESS_STALE_SECONDS
-            and latest_info_prompt_idx is not None
-            and latest_info_prompt_idx > latest_working_idx
-        ):
-            return "needs_input", "Awaiting input"
-
         if (
             latest_background_count_idx is not None
             and latest_working_idx is not None
