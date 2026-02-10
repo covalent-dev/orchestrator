@@ -66,12 +66,11 @@ def _status_client() -> StatusClient:
 
 STATUS_FALLBACK_DIR = Path("~/.orch-v2/status").expanduser()
 ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
-ERROR_PATTERNS = (
-    "traceback",
-    "exception",
-    "fatal:",
-    "error:",
-    "failed",
+ERROR_REGEXES = (
+    re.compile(r"^\s*traceback", re.IGNORECASE),
+    re.compile(r"^\s*error\s*:", re.IGNORECASE),
+    re.compile(r"^\s*fatal\s*:", re.IGNORECASE),
+    re.compile(r"\b(runtimeerror|typeerror|valueerror|assertionerror)\s*:", re.IGNORECASE),
 )
 DONE_PATTERNS = (
     "task complete",
@@ -101,7 +100,7 @@ BACKGROUND_PROGRESS_PATTERNS = (
 INFORMATIONAL_PROMPT_PREFIXES = (
     "use /",
 )
-PROMPT_STALE_SECONDS = 15
+PROMPT_STALE_SECONDS = 300
 
 
 def _detect_agent_type(session_id: str) -> str:
@@ -206,8 +205,7 @@ def _infer_status_from_output(lines: List[str], last_activity_ts: int | None) ->
                 latest_noninfo_prompt_text = prompt_text
 
     for line in newest_first:
-        lowered = line.lower()
-        if any(pattern in lowered for pattern in ERROR_PATTERNS):
+        if any(regex.search(line) for regex in ERROR_REGEXES):
             return "error", line[:160]
 
     done_line = next((ln for ln in newest_first if any(pat in ln.lower() for pat in DONE_PATTERNS)), None)
