@@ -88,9 +88,16 @@ WORKING_PATTERNS = (
     "waiting for background terminal",
     "background terminals running",
 )
+DEMOTABLE_WORKING_PATTERNS = (
+    "esc to interrupt",
+    "working (",
+    "planning ",
+    "tracking run progress",
+)
 INFORMATIONAL_PROMPT_PREFIXES = (
     "use /",
 )
+PROMPT_STALE_SECONDS = 15
 
 
 def _detect_agent_type(session_id: str) -> str:
@@ -166,31 +173,62 @@ def _infer_status_from_output(lines: List[str], last_activity_ts: int | None) ->
     recent_lines = cleaned[-20:]
     recent_text = "\n".join(recent_lines).lower()
     newest_first = list(reversed(recent_lines))
+    now_ts = int(datetime.now().timestamp())
+
+    latest_working_idx: int | None = None
+    latest_working_line: str | None = None
+    latest_noninfo_prompt_idx: int | None = None
+    latest_noninfo_prompt_text: str = ""
+    latest_info_prompt_idx: int | None = None
+
+    for idx, line in enumerate(recent_lines):
+        lowered = line.lower()
+        if any(pat in lowered for pat in WORKING_PATTERNS):
+            latest_working_idx = idx
+            latest_working_line = line
+        if line.startswith("› "):
+            prompt_text = line[2:].strip()
+            if _is_informational_prompt(prompt_text):
+                latest_info_prompt_idx = idx
+            else:
+                latest_noninfo_prompt_idx = idx
+                latest_noninfo_prompt_text = prompt_text
 
     for line in newest_first:
         lowered = line.lower()
         if any(pattern in lowered for pattern in ERROR_PATTERNS):
             return "error", line[:160]
 
-    prompt_line = next((ln for ln in newest_first if ln.startswith("› ")), None)
-    prompt_text = ""
-    if prompt_line:
-        prompt_text = prompt_line[2:].strip()
-        if _is_informational_prompt(prompt_text):
-            prompt_line = None
-            prompt_text = ""
     done_line = next((ln for ln in newest_first if any(pat in ln.lower() for pat in DONE_PATTERNS)), None)
-    if done_line and prompt_line:
+    if done_line and latest_noninfo_prompt_idx is not None:
         return "done", done_line[:160]
 
-    working_line = next((ln for ln in newest_first if any(pat in ln.lower() for pat in WORKING_PATTERNS)), None)
-    if working_line:
-        return "working", working_line[:160]
+    if latest_noninfo_prompt_idx is not None:
+        if latest_working_idx is None or latest_noninfo_prompt_idx > latest_working_idx:
+            return "needs_input", (
+                f"Awaiting input: {latest_noninfo_prompt_text[:140]}"
+                if latest_noninfo_prompt_text
+                else "Awaiting input"
+            )
 
-    if prompt_line:
-        return "needs_input", f"Awaiting input: {prompt_text[:140]}" if prompt_text else "Awaiting input"
+    if latest_working_line:
+        lowered_working = latest_working_line.lower()
+        working_demotable = any(pat in lowered_working for pat in DEMOTABLE_WORKING_PATTERNS)
+        if (
+            latest_info_prompt_idx is not None
+            and latest_working_idx is not None
+            and latest_info_prompt_idx > latest_working_idx
+            and working_demotable
+            and last_activity_ts is not None
+            and now_ts - last_activity_ts > PROMPT_STALE_SECONDS
+        ):
+            return "needs_input", "Awaiting input"
+        return "working", latest_working_line[:160]
 
-    now_ts = int(datetime.now().timestamp())
+    if latest_info_prompt_idx is not None:
+        if last_activity_ts is None or now_ts - last_activity_ts > PROMPT_STALE_SECONDS:
+            return "needs_input", "Awaiting input"
+
     if last_activity_ts is not None and now_ts - last_activity_ts > 300:
         return "idle", "Idle"
 
