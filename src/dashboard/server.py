@@ -86,8 +86,6 @@ WORKING_PATTERNS = (
     "running job bot",
     "tracking run progress",
     "waiting for background terminal",
-    "background terminal running",
-    "background terminals running",
 )
 DEMOTABLE_WORKING_PATTERNS = (
     "esc to interrupt",
@@ -95,10 +93,16 @@ DEMOTABLE_WORKING_PATTERNS = (
     "planning ",
     "tracking run progress",
 )
+BACKGROUND_PROGRESS_PATTERNS = (
+    "waiting for background terminal",
+    "tracking run progress",
+    "running job bot",
+)
 INFORMATIONAL_PROMPT_PREFIXES = (
     "use /",
 )
 PROMPT_STALE_SECONDS = 15
+BACKGROUND_PROGRESS_STALE_SECONDS = 300
 
 
 def _detect_agent_type(session_id: str) -> str:
@@ -183,12 +187,17 @@ def _infer_status_from_output(lines: List[str], last_activity_ts: int | None) ->
     latest_noninfo_prompt_idx: int | None = None
     latest_noninfo_prompt_text: str = ""
     latest_info_prompt_idx: int | None = None
+    latest_background_count_idx: int | None = None
+    latest_background_count_line: str | None = None
 
     for idx, line in enumerate(recent_lines):
         lowered = line.lower()
         if any(pat in lowered for pat in WORKING_PATTERNS):
             latest_working_idx = idx
             latest_working_line = line
+        if "background terminal running" in lowered or "background terminals running" in lowered:
+            latest_background_count_idx = idx
+            latest_background_count_line = line
         if line.startswith("› "):
             prompt_text = line[2:].strip()
             if _is_informational_prompt(prompt_text):
@@ -216,23 +225,39 @@ def _infer_status_from_output(lines: List[str], last_activity_ts: int | None) ->
 
     if latest_working_line:
         lowered_working = latest_working_line.lower()
-        has_background_hint = any(
-            "background terminal" in ln.lower()
-            or "waiting for background terminal" in ln.lower()
+        has_background_progress = any(
+            any(pat in ln.lower() for pat in BACKGROUND_PROGRESS_PATTERNS)
             for ln in recent_lines
         )
         working_demotable = any(pat in lowered_working for pat in DEMOTABLE_WORKING_PATTERNS)
-        if has_background_hint:
-            working_demotable = False
+        activity_age = (now_ts - last_activity_ts) if last_activity_ts is not None else None
+
         if (
             latest_info_prompt_idx is not None
             and latest_working_idx is not None
             and latest_info_prompt_idx > latest_working_idx
             and working_demotable
-            and last_activity_ts is not None
-            and now_ts - last_activity_ts > PROMPT_STALE_SECONDS
+            and activity_age is not None
+            and activity_age > PROMPT_STALE_SECONDS
+            and not has_background_progress
         ):
             return "needs_input", "Awaiting input"
+        if (
+            has_background_progress
+            and activity_age is not None
+            and activity_age > BACKGROUND_PROGRESS_STALE_SECONDS
+            and latest_info_prompt_idx is not None
+            and latest_info_prompt_idx > latest_working_idx
+        ):
+            return "needs_input", "Awaiting input"
+
+        if (
+            latest_background_count_idx is not None
+            and latest_working_idx is not None
+            and latest_background_count_idx >= latest_working_idx
+        ):
+            return "working", latest_background_count_line[:160]
+
         return "working", latest_working_line[:160]
 
     if latest_info_prompt_idx is not None:
