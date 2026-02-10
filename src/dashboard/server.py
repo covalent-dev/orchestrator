@@ -173,6 +173,9 @@ def _parse_task_spec(path: Path) -> Dict[str, Any]:
         "created": (_extract_field(content, "Created") or "").strip(),
         "duration": (_extract_field(content, "Estimated Duration") or "").strip(),
         "model": (_extract_field(content, "Model") or "").strip(),
+        "tier": (_extract_field(content, "Tier") or "").strip(),
+        "category": (_extract_field(content, "Category") or "").strip(),
+        "purpose": (_extract_field(content, "Purpose") or "").strip(),
     }
 
 
@@ -758,7 +761,7 @@ def api_agents():
 @app.route("/api/tasks/<task_id>")
 def api_get_task(task_id: str):
     """Get full task details including spec content."""
-    for state in ["pending", "in-progress", "blocked", "completed"]:
+    for state in ["pending", "in-progress", "blocked", "completed", "learning"]:
         path = QUEUE_ROOT / state / f"{task_id}.md"
         if path.exists():
             try:
@@ -773,6 +776,9 @@ def api_get_task(task_id: str):
                     "priority": task.get("priority"),
                     "project": task.get("project"),
                     "created": task.get("created"),
+                    "tier": task.get("tier"),
+                    "category": task.get("category"),
+                    "purpose": task.get("purpose"),
                     "content": content
                 })
             except Exception as exc:
@@ -783,7 +789,7 @@ def api_get_task(task_id: str):
 @app.route("/api/tasks/<task_id>", methods=["DELETE"])
 def api_delete_task(task_id: str):
     """Delete a task from any queue."""
-    for state in ["pending", "in-progress", "blocked", "completed"]:
+    for state in ["pending", "in-progress", "blocked", "completed", "learning"]:
         path = QUEUE_ROOT / state / f"{task_id}.md"
         if path.exists():
             try:
@@ -802,7 +808,7 @@ def api_update_task(task_id: str):
     if content is None:
         return jsonify({"error": "content is required"}), 400
 
-    for state in ["pending", "in-progress", "blocked", "completed"]:
+    for state in ["pending", "in-progress", "blocked", "completed", "learning"]:
         path = QUEUE_ROOT / state / f"{task_id}.md"
         if path.exists():
             try:
@@ -818,7 +824,7 @@ def api_move_task(task_id: str):
     """Move task to a different queue."""
     data = request.get_json(silent=True) or {}
     target_state = (data.get("to") or "").strip()
-    valid_states = ["pending", "in-progress", "blocked", "completed"]
+    valid_states = ["pending", "in-progress", "blocked", "completed", "learning"]
 
     if target_state not in valid_states:
         return jsonify({"error": f"Invalid target state. Must be one of: {valid_states}"}), 400
@@ -849,7 +855,7 @@ def api_set_priority(task_id: str):
     if not new_priority:
         return jsonify({"error": "priority is required (P0, P1, P2, or P3)"}), 400
 
-    for state in ["pending", "in-progress", "blocked", "completed"]:
+    for state in ["pending", "in-progress", "blocked", "completed", "learning"]:
         path = QUEUE_ROOT / state / f"{task_id}.md"
         if path.exists():
             try:
@@ -873,7 +879,7 @@ def api_set_priority(task_id: str):
 @app.route("/api/tasks/<task_id>/duplicate", methods=["POST"])
 def api_duplicate_task(task_id: str):
     """Duplicate a task with a new ID."""
-    for state in ["pending", "in-progress", "blocked", "completed"]:
+    for state in ["pending", "in-progress", "blocked", "completed", "learning"]:
         path = QUEUE_ROOT / state / f"{task_id}.md"
         if path.exists():
             try:
@@ -915,7 +921,7 @@ def api_duplicate_task(task_id: str):
 @app.route("/api/stats")
 def api_stats():
     """Get queue statistics (counts only)."""
-    stats = {"pending": 0, "in-progress": 0, "blocked": 0, "completed": 0}
+    stats = {"pending": 0, "in-progress": 0, "blocked": 0, "completed": 0, "learning": 0}
     for state in stats.keys():
         folder = QUEUE_ROOT / state
         if folder.exists():
@@ -949,7 +955,7 @@ def api_health():
 
 @app.route("/api/queue")
 def api_queue():
-    result = {"pending": [], "in-progress": [], "blocked": [], "completed": []}
+    result = {"pending": [], "in-progress": [], "blocked": [], "completed": [], "learning": []}
 
     for state in result.keys():
         folder = QUEUE_ROOT / state
@@ -965,6 +971,9 @@ def api_queue():
                     "priority": task.get("priority"),
                     "project": task.get("project"),
                     "created": task.get("created"),
+                    "tier": task.get("tier"),
+                    "category": task.get("category"),
+                    "purpose": task.get("purpose"),
                 }
                 # Add mtime for completed tasks (for time-based sorting)
                 if state == "completed":
@@ -996,6 +1005,11 @@ def api_queue():
     
     # Sort completed by modification time (most recent first)
     result["completed"].sort(key=lambda x: x.get("mtime", 0), reverse=True)
+    tier_order = {"T0": 0, "T1": 1, "T2": 2, "T3": 3}
+    result["learning"].sort(key=lambda item: (
+        tier_order.get((item.get("tier") or "").upper(), 99),
+        item.get("id") or "",
+    ))
 
     response = jsonify(result)
     # Queue data is polled every few seconds by the dashboard; prevent stale browser caches.

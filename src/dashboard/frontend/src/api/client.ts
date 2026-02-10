@@ -27,6 +27,9 @@ export interface QueueItem {
     project?: string;
     created: string;
     mtime?: number; // completed queue sort key (seconds since epoch)
+    tier?: string;
+    category?: string;
+    purpose?: string;
 }
 
 export interface QueueData {
@@ -34,6 +37,7 @@ export interface QueueData {
     'in-progress': QueueItem[];
     blocked: QueueItem[];
     completed: QueueItem[];
+    learning: QueueItem[];
 }
 
 export interface Template {
@@ -125,7 +129,7 @@ export const getTaskDetail = async (taskId: string) => {
 };
 
 // Move task (e.g., to blocked, back to pending)
-export const moveTask = async (taskId: string, to: 'pending' | 'in-progress' | 'blocked' | 'completed') => {
+export const moveTask = async (taskId: string, to: 'pending' | 'in-progress' | 'blocked' | 'completed' | 'learning') => {
     const { data } = await api.post(`/tasks/${taskId}/move`, { to });
     return data;
 };

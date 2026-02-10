@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchQueue, launchTask, getTaskDetail, type QueueItem, type QueueData, api } from '../../api/client';
 import { useState } from 'react';
-import { Play, Clock, AlertCircle, CheckCircle, ChevronRight, X, ArrowRight } from 'lucide-react';
+import { Play, Clock, AlertCircle, CheckCircle, ChevronRight, X, ArrowRight, BookOpen } from 'lucide-react';
 
 const priorityColors: Record<string, string> = {
     p0: 'text-red-300 border-red-900/50 bg-red-950/40',
@@ -10,11 +10,19 @@ const priorityColors: Record<string, string> = {
     p3: 'text-zinc-400 border-zinc-700/50 bg-zinc-900/40',
 };
 
+const tierColors: Record<string, string> = {
+    t0: 'text-red-300 border-red-900/50 bg-red-950/40',
+    t1: 'text-orange-300 border-orange-900/50 bg-orange-950/40',
+    t2: 'text-amber-300 border-amber-900/50 bg-amber-950/40',
+    t3: 'text-zinc-400 border-zinc-700/50 bg-zinc-900/40',
+};
+
 const stateConfig = {
     pending: { icon: Clock, label: 'Pending', color: 'text-zinc-400', bg: 'bg-black border-zinc-800' },
     'in-progress': { icon: Play, label: 'In Progress', color: 'text-blue-300', bg: 'bg-black border-blue-900/30' },
     blocked: { icon: AlertCircle, label: 'Blocked', color: 'text-red-300', bg: 'bg-black border-red-900/30' },
     completed: { icon: CheckCircle, label: 'Completed', color: 'text-emerald-300', bg: 'bg-black border-emerald-900/30' },
+    learning: { icon: BookOpen, label: 'Learning', color: 'text-amber-300', bg: 'bg-black border-amber-900/30' },
 };
 
 interface TaskDetailPanelProps {
@@ -40,7 +48,7 @@ function TaskDetailPanel({ taskId, onClose, onLaunch }: TaskDetailPanelProps) {
     });
 
     const getMoveOptions = (currentState: string) => {
-        const allStates = ['pending', 'in-progress', 'blocked', 'completed'];
+        const allStates = ['pending', 'in-progress', 'blocked', 'completed', 'learning'];
         return allStates.filter(s => s !== currentState);
     };
 
@@ -71,6 +79,16 @@ function TaskDetailPanel({ taskId, onClose, onLaunch }: TaskDetailPanelProps) {
                     {task?.agent && (
                         <span className="px-2 py-0.5 border border-purple-500/50 bg-purple-500/10 text-purple-400 rounded-md font-medium capitalize">
                             {task.agent}
+                        </span>
+                    )}
+                    {task?.tier && (
+                        <span className={`px-2 py-0.5 border rounded-md font-medium ${tierColors[(task.tier || '').toLowerCase()] || tierColors.t3}`}>
+                            {task.tier.toUpperCase()}
+                        </span>
+                    )}
+                    {task?.category && (
+                        <span className="px-2 py-0.5 border border-amber-500/50 bg-amber-500/10 text-amber-400 rounded-md font-medium">
+                            {task.category}
                         </span>
                     )}
                     {task?.state && (
@@ -146,6 +164,7 @@ interface TaskQueueProps {
 
 export function TaskQueue({ selectedTaskId, onSelectedTaskIdChange }: TaskQueueProps) {
     const [uncontrolledSelectedTaskId, setUncontrolledSelectedTaskId] = useState<string | null>(null);
+    const [learningExpanded, setLearningExpanded] = useState(false);
     const isControlled = selectedTaskId !== undefined;
     const selectedTask = isControlled ? selectedTaskId : uncontrolledSelectedTaskId;
     const setSelectedTask = isControlled ? (onSelectedTaskIdChange ?? (() => {})) : setUncontrolledSelectedTaskId;
@@ -262,6 +281,67 @@ export function TaskQueue({ selectedTaskId, onSelectedTaskIdChange }: TaskQueueP
                 <div className="flex gap-4 overflow-x-auto flex-1 pb-2">
                     {activeStates.map(state => renderColumn(state, queue?.[state] || []))}
                 </div>
+                {(queue?.learning?.length ?? 0) > 0 && (
+                    <div className="mt-4 bg-black border border-amber-900/30 rounded-lg overflow-hidden shrink-0">
+                        <button
+                            onClick={() => setLearningExpanded(!learningExpanded)}
+                            className="w-full p-3 flex items-center gap-2 bg-amber-950/20 border-b border-amber-900/20 hover:bg-amber-950/30 transition-colors"
+                        >
+                            <BookOpen size={16} className="text-amber-300" />
+                            <span className="font-semibold text-amber-300">Learning</span>
+                            <span className="ml-1 text-xs text-amber-400/60 bg-amber-500/10 px-2 py-0.5 rounded-full font-medium">
+                                {queue?.learning?.length ?? 0}
+                            </span>
+                            <ChevronRight size={14} className={`text-amber-400/50 ml-auto transition-transform ${learningExpanded ? 'rotate-90' : ''}`} />
+                        </button>
+                        {learningExpanded && (
+                            <div className="p-3 space-y-4 max-h-[500px] overflow-y-auto">
+                                {(['T0', 'T1', 'T2', 'T3'] as const).map(tier => {
+                                    const tierTasks = (queue?.learning ?? []).filter(
+                                        t => (t.tier || '').toUpperCase() === tier
+                                    );
+                                    if (tierTasks.length === 0) return null;
+                                    return (
+                                        <div key={tier}>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={`text-xs px-1.5 py-0.5 border rounded-md font-bold ${tierColors[tier.toLowerCase()]}`}>
+                                                    {tier}
+                                                </span>
+                                                <span className="text-xs text-gray-500">
+                                                    {tier === 'T0' ? 'Python Fundamentals' : tier === 'T1' ? 'Frameworks & Tools' : tier === 'T2' ? 'Codebase Deep Dives' : 'Architecture & Concepts'}
+                                                </span>
+                                                <span className="text-xs text-gray-600 ml-auto">{tierTasks.length}</span>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                                                {tierTasks.map(task => (
+                                                    <div
+                                                        key={task.id}
+                                                        onClick={() => setSelectedTask(task.id)}
+                                                        className={`p-2.5 bg-black border rounded-md cursor-pointer hover:border-amber-500/30 transition-colors ${
+                                                            selectedTask === task.id ? 'border-amber-500/50 ring-1 ring-amber-500/20' : 'border-white/10'
+                                                        }`}
+                                                    >
+                                                        <span className="text-sm text-gray-300 line-clamp-2 font-medium">{task.title}</span>
+                                                        <div className="flex gap-1 mt-2 flex-wrap">
+                                                            <span className={`text-[10px] px-1.5 py-0.5 border rounded-md font-medium ${tierColors[tier.toLowerCase()]}`}>
+                                                                {tier}
+                                                            </span>
+                                                            {task.category && (
+                                                                <span className="text-[10px] px-1.5 py-0.5 border border-amber-500/20 bg-amber-500/5 text-amber-400/70 rounded-md">
+                                                                    {task.category}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {selectedTask && (
