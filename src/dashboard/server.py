@@ -86,6 +86,7 @@ WORKING_PATTERNS = (
     "running job bot",
     "tracking run progress",
     "waiting for background terminal",
+    "background terminal running",
     "background terminals running",
 )
 DEMOTABLE_WORKING_PATTERNS = (
@@ -162,6 +163,8 @@ def _is_informational_prompt(prompt_text: str) -> bool:
         return False
     if lowered == "use /skills to list available skills":
         return True
+    if lowered == "implement {feature}":
+        return True
     return any(lowered.startswith(prefix) for prefix in INFORMATIONAL_PROMPT_PREFIXES)
 
 
@@ -213,7 +216,14 @@ def _infer_status_from_output(lines: List[str], last_activity_ts: int | None) ->
 
     if latest_working_line:
         lowered_working = latest_working_line.lower()
+        has_background_hint = any(
+            "background terminal" in ln.lower()
+            or "waiting for background terminal" in ln.lower()
+            for ln in recent_lines
+        )
         working_demotable = any(pat in lowered_working for pat in DEMOTABLE_WORKING_PATTERNS)
+        if has_background_hint:
+            working_demotable = False
         if (
             latest_info_prompt_idx is not None
             and latest_working_idx is not None
