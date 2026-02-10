@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Square, X } from 'lucide-react';
 import { clsx } from 'clsx';
-import Ansi from 'ansi-to-react';
+import type { ComponentType, ReactNode } from 'react';
 
 import { fetchSessionOutput, killSession, type Session } from '../../api/client';
 
@@ -16,6 +16,7 @@ export function TerminalViewer({ session, onClose }: TerminalViewerProps) {
     const queryClient = useQueryClient();
     const [autoScroll, setAutoScroll] = useState(true);
     const [killError, setKillError] = useState<string | null>(null);
+    const [AnsiRenderer, setAnsiRenderer] = useState<ComponentType<{ children?: ReactNode }> | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     const queryKey = useMemo(() => ['session-output', session.id], [session.id]);
@@ -38,6 +39,23 @@ export function TerminalViewer({ session, onClose }: TerminalViewerProps) {
             setKillError(err instanceof Error ? err.message : 'Failed to kill session.');
         },
     });
+
+    // Load ANSI renderer lazily to avoid tab-level crashes if the package fails in-browser.
+    useEffect(() => {
+        let cancelled = false;
+        import('ansi-to-react')
+            .then((mod) => {
+                if (cancelled) return;
+                const Renderer = (mod as { default?: ComponentType<{ children?: ReactNode }> }).default;
+                if (Renderer) setAnsiRenderer(() => Renderer);
+            })
+            .catch(() => {
+                if (!cancelled) setAnsiRenderer(null);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     // Auto-scroll when new output arrives, unless the user has scrolled up.
     useEffect(() => {
@@ -126,7 +144,11 @@ export function TerminalViewer({ session, onClose }: TerminalViewerProps) {
                             </div>
                         ) : (
                             <div className="text-sm text-green-300 font-mono leading-relaxed whitespace-pre-wrap break-words">
-                                <Ansi>{data?.output || 'Loading...'}</Ansi>
+                                {AnsiRenderer ? (
+                                    <AnsiRenderer>{data?.output || 'Loading...'}</AnsiRenderer>
+                                ) : (
+                                    <pre className="whitespace-pre-wrap break-words">{data?.output || 'Loading...'}</pre>
+                                )}
                             </div>
                         )}
                     </div>

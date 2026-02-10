@@ -87,10 +87,13 @@ export function SessionBoard() {
 
         const query = searchQuery.trim().toLowerCase();
         return sessions.filter(session => {
+            const sessionId = String(session.id ?? '').toLowerCase();
+            const sessionMessage = String(session.message ?? '').toLowerCase();
+            const sessionAgentType = String(session.agent_type ?? 'unknown');
             const matchesQuery = !query
-                || session.id.toLowerCase().includes(query)
-                || session.message.toLowerCase().includes(query);
-            const matchesAgent = agentFilter === 'all' || session.agent_type === agentFilter;
+                || sessionId.includes(query)
+                || sessionMessage.includes(query);
+            const matchesAgent = agentFilter === 'all' || sessionAgentType === agentFilter;
             return matchesQuery && matchesAgent;
         });
     }, [agentFilter, searchQuery, sessions]);
